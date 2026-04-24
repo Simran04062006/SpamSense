@@ -1,0 +1,96 @@
+/**
+ * Naive Bayes Classifier for Spam Detection
+ */
+
+export interface TrainingItem {
+  text: string;
+  isSpam: boolean;
+}
+
+export interface ClassificationResult {
+  isSpam: boolean;
+  spamProbability: number;
+  wordStats: { word: string; spamScore: number; hamScore: number }[];
+}
+
+export class NaiveBayesDetector {
+  private spamWordCounts: Map<string, number> = new Map();
+  private hamWordCounts: Map<string, number> = new Map();
+  private spamTotalWords: number = 0;
+  private hamTotalWords: number = 0;
+  private totalSpamDocs: number = 0;
+  private totalHamDocs: number = 0;
+  private vocabulary: Set<string> = new Set();
+
+  constructor(initialData: TrainingItem[] = []) {
+    initialData.forEach(item => this.train(item.text, item.isSpam));
+  }
+
+  private tokenize(text: string): string[] {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .split(/\s+/)
+      .filter(word => word.length > 2);
+  }
+
+  train(text: string, isSpam: boolean) {
+    const tokens = this.tokenize(text);
+    const targetMap = isSpam ? this.spamWordCounts : this.hamWordCounts;
+    
+    if (isSpam) {
+      this.totalSpamDocs++;
+      this.spamTotalWords += tokens.length;
+    } else {
+      this.totalHamDocs++;
+      this.hamTotalWords += tokens.length;
+    }
+
+    tokens.forEach(token => {
+      targetMap.set(token, (targetMap.get(token) || 0) + 1);
+      this.vocabulary.add(token);
+    });
+  }
+
+  classify(text: string): ClassificationResult {
+    const tokens = this.tokenize(text);
+    const totalDocs = this.totalSpamDocs + this.totalHamDocs;
+    
+    let spamLogProb = Math.log(this.totalSpamDocs / totalDocs || 0.5);
+    let hamLogProb = Math.log(this.totalHamDocs / totalDocs || 0.5);
+
+    const vSize = this.vocabulary.size;
+    const wordStats: { word: string; spamScore: number; hamScore: number }[] = [];
+
+    tokens.forEach(token => {
+      const spamCount = (this.spamWordCounts.get(token) || 0) + 1;
+      const hamCount = (this.hamWordCounts.get(token) || 0) + 1;
+
+      const pWordSpam = spamCount / (this.spamTotalWords + vSize);
+      const pWordHam = hamCount / (this.hamTotalWords + vSize);
+
+      spamLogProb += Math.log(pWordSpam);
+      hamLogProb += Math.log(pWordHam);
+
+      wordStats.push({ word: token, spamScore: pWordSpam, hamScore: pWordHam });
+    });
+
+    const maxLog = Math.max(spamLogProb, hamLogProb);
+    const spamExp = Math.exp(spamLogProb - maxLog);
+    const hamExp = Math.exp(hamLogProb - maxLog);
+    const total = spamExp + hamExp;
+
+    return {
+      isSpam: spamLogProb > hamLogProb,
+      spamProbability: spamExp / total,
+      wordStats
+    };
+  }
+}
+
+export const DEFAULT_TRAINING_DATA: TrainingItem[] = [
+  { text: "Get cheap luxury watches now! Best deals on Rolex.", isSpam: true },
+  { text: "Congratulations! You've won a $1000 gift card.", isSpam: true },
+  { text: "Hey, are we still meeting for lunch today at 12?", isSpam: false },
+  // ... more data in the actual file
+];
